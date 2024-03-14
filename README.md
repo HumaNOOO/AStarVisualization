@@ -1,4 +1,5 @@
-A* algorithm visualisation using C++ and SFML
+A* algorithm visualisation using C++20 and SFML
+Font used - JetBrains Mono https://www.jetbrains.com/lp/mono/
 How to run on Windows:
 1. Download the SFML https://www.sfml-dev.org/files/SFML-2.6.1-windows-vc17-64-bit.zip
 2. Extract the zip file into the project folder
