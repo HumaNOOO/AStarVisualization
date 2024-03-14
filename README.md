@@ -6,11 +6,11 @@ How to run on Windows:
 4. Open the AStarAnimation.sln in  Visual Studio as a project
 5. Compile and run
    
-Left mouse button - place obstacle
-Right mouse button - delete obstacle
-G - generate random obstacles
-B - build a maze using a maze generation algorithm
-R - reset
-S - start the algorithm
-Left Ctrl + Left mouse button - place a line of obstacles
-C - cancel line placing
+Left mouse button - place obstacle<br>
+Right mouse button - delete obstacle<br>
+G - generate random obstacles<br>
+B - build a maze using a maze generation algorithm<br>
+R - reset<br>
+S - start the algorithm<br>
+Left Ctrl + Left mouse button - place a line of obstacles<br>
+C - cancel line placing<br>
