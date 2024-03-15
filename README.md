@@ -15,8 +15,8 @@ B - build a maze using a maze generation algorithm<br>
 R - reset<br>
 S - start the algorithm<br>
 Left Ctrl + Left mouse button - place a line of obstacles<br>
-Left Alt + Left mouse button - place a waypoint
-Left Alt + Right mouse button - delete a waypoint
+Left Alt + Left mouse button - place a waypoint<br>
+Left Alt + Right mouse button - delete a waypoint<br>
 C - cancel line placing<br>
 Hyphen (-) - decrease tile size<br>
 Equal (=) - increase tile size<br>
