@@ -2,22 +2,21 @@
 #include <limits>
 #include <cmath>
 #include <ranges>
-#include <format>
 #include <algorithm>
 #include <stack>
+#include <iostream>
 #include <sstream>
 #include <iomanip>
 #include <thread>
 #include <atomic>
-#include <iostream>
 #include <random>
 
 #include <SFML/Graphics.hpp>
 
 std::atomic exit_program = false;
 std::atomic stop_a_star = false;
-int map_width = 50;
-int map_height = 50;
+int map_width = 30;
+int map_height = 30;
 struct Node;
 sf::Vector2f p1{ -1,-1 };
 sf::Vector2f p2{ -1,-1 };
@@ -25,7 +24,6 @@ float m = 0;
 float b = 0;
 Node* start;
 Node* stop;
-std::vector<Node*> stops;
 
 void listener()
 {
@@ -74,13 +72,57 @@ struct Node
 	bool isPath;
 	bool inOpenSet;
 	bool isTempPath;
+
+	void mouse_over(const sf::Vector2i mp)
+	{
+		if (!(mp.x > x + sizex || mp.x < x || mp.y > y + sizey || mp.y < y))
+		{
+			//bool neighborOfEnd = std::ranges::find(stop->neighbors, this) != stop->neighbors.end() ? true : false;
+			//std::cout << std::format("neighbor count: {}, neighbor of end: {}, visited: {}, blocking: {}, fscore: {}, gscore: {}, open set: {} is end: {}, is start: {}\n", neighbors.size(), neighborOfEnd, visited, blocking, fscore, gscore, inOpenSet, stop == this, start == this);
+			//std::cout << std::format("gridx: {}, gridy: {}", gridx, gridy) << '\n';
+			if (sf::Keyboard::isKeyPressed(sf::Keyboard::LShift) && sf::Mouse::isButtonPressed(sf::Mouse::Left))
+			{
+				start = this;
+				return;
+			}
+			else if (sf::Keyboard::isKeyPressed(sf::Keyboard::LShift) && sf::Mouse::isButtonPressed(sf::Mouse::Right))
+			{
+				stop = this;
+				return;
+			}
+
+			if (sf::Keyboard::isKeyPressed(sf::Keyboard::LControl) && sf::Mouse::isButtonPressed(sf::Mouse::Left))
+			{
+				p2 = sf::Vector2f{ -1,-1 };
+				p1 = sf::Vector2f(mp);
+				if (p2.x - p1.x != 0) m = (p2.y - p1.y) / (p2.x - p1.x);
+				b = -(m * p1.x - p1.y);
+				return;
+			}
+			else if (sf::Keyboard::isKeyPressed(sf::Keyboard::LControl) && sf::Mouse::isButtonPressed(sf::Mouse::Right))
+			{
+				if (p1.x != -1 && p1.y != -1)
+				{
+					p2 = sf::Vector2f(mp);
+					if (p2.x - p1.x != 0) m = (p2.y - p1.y) / (p2.x - p1.x);
+					b = -(m * p1.x - p1.y);
+				}
+				return;
+			}
+
+			if (sf::Mouse::isButtonPressed(sf::Mouse::Left)) blocking = true;
+			else if (sf::Mouse::isButtonPressed(sf::Mouse::Right)) blocking = false;
+
+			//std::cout << "\ngscore: " << gscore << " fscore: " << fscore << "blocking: " << blocking << " parent: " << parent;
+		}
+	}
 };
 
 using Map = std::vector<std::vector<Node>>;
 class BoardDrawer : public sf::Transformable, public sf::Drawable
 {
 public:
-	BoardDrawer(Map& map) : ptr{ map }
+	BoardDrawer(Map& m) : ptr{ m }
 	{
 		vertices.setPrimitiveType(sf::Quads);
 		line_vertices.setPrimitiveType(sf::Quads);
@@ -219,16 +261,6 @@ public:
 		vertices[offset_start + 1].color = sf::Color::Yellow;
 		vertices[offset_start + 2].color = sf::Color::Yellow;
 		vertices[offset_start + 3].color = sf::Color::Yellow;
-
-		for (const Node* node : stops)
-		{
-			const int offset = (node->gridx * map_width + node->gridy) * 4;
-
-			vertices[offset].color = sf::Color::Magenta;
-			vertices[offset + 1].color = sf::Color::Magenta;
-			vertices[offset + 2].color = sf::Color::Magenta;
-			vertices[offset + 3].color = sf::Color::Magenta;
-		}
 	}
 
 	void append_walls()
@@ -252,12 +284,21 @@ public:
 					vertices.append(sf::Vertex({ j * (Node::spacing + Node::sizex) + Node::sizex, i * (Node::sizey + Node::spacing) + Node::sizey + Node::spacing }, sf::Color::White));
 					vertices.append(sf::Vertex({ j * (Node::spacing + Node::sizex), i * (Node::sizey + Node::spacing) + Node::sizey + Node::spacing }, sf::Color::White));
 				}
+
+				//for(Node* neighbor : ptr[i][j].neighbors)
+				//{
+				//	line_vertices.append(sf::Vertex({ neighbor->x + Node::sizex / 2.f, neighbor->y + Node::sizey / 2.f}, sf::Color::Red));
+				//	line_vertices.append(sf::Vertex({ ptr[i][j].x + Node::sizex / 2.f, ptr[i][j].y + Node::sizey / 2.f}, sf::Color::Red));
+				//}
 			}
 		}
 	}
 
 	void append_wall(const Node* left, const Node* right)
 	{
+		//line_vertices.append(sf::Vertex({ left->x + Node::sizex / 2.f, left->y + Node::sizey / 2.f }, sf::Color::Red));
+		//line_vertices.append(sf::Vertex({ right->x + Node::sizex / 2.f, right->y + Node::sizey / 2.f }, sf::Color::Red));
+
 		if (left->x < right->x)
 		{
 			line_vertices.append(sf::Vertex({ left->x + Node::sizex, left->y }, sf::Color::White));
@@ -297,7 +338,7 @@ private:
 	sf::VertexArray line_vertices;
 	Map& ptr;
 
-	void draw(sf::RenderTarget& rt, sf::RenderStates states) const override
+	void draw(sf::RenderTarget& rt, sf::RenderStates states) const
 	{
 		states.transform *= getTransform();
 		rt.draw(vertices, states);
@@ -307,15 +348,14 @@ private:
 class AStarApp
 {
 public:
-	AStarApp() : window{ sf::VideoMode(2560,1440), "A*", sf::Style::Default }, board(map), total_time(0.f), real_time(0.f), visited_nodes(0.f), path_length(0)
+	AStarApp() : window{ sf::VideoMode(3100,2100), "A*", sf::Style::Default }, board(map), total_time(0.f), real_time(0.f)
 	{
 		reset_map();
 
 		font.loadFromFile("mono.ttf");
 		text.setFont(font);
 		text.setPosition(Node::sizex * map_height + Node::spacing * map_height, 5.f);
-		text.setCharacterSize(24);
-		window.setPosition({ 0,0 });
+		text.setCharacterSize(18);
 	}
 
 	void run()
@@ -323,6 +363,9 @@ public:
 		ss << std::fixed;
 		std::thread worker(&listener);
 		sf::Event e{};
+		sf::RectangleShape rs;
+		rs.setFillColor(sf::Color(0, 0, 0, 100));
+		rs.setSize({ Node::sizex, Node::sizey });
 		while (!exit_program)
 		{
 			while (window.pollEvent(e))
@@ -355,63 +398,63 @@ public:
 						map_width++;
 						reset_map();
 						break;
-					case sf::Keyboard::Equal:
+					case sf::Keyboard::Add:
 						Node::sizex++;
 						Node::sizey++;
 						reset_map();
 						break;
-					case sf::Keyboard::Hyphen:
+					case sf::Keyboard::Subtract:
 						Node::sizex--;
 						Node::sizey--;
 						reset_map();
 						break;
 					}
-					break;
-				case sf::Event::Resized:
-					window.setView(sf::View(sf::FloatRect(0, 0, e.size.width, e.size.height)));
-					break;
 				}
 			}
 
 			window.setTitle("A*" + std::to_string(1.f / dt.restart().asSeconds()));
 
-			if (const sf::Vector2i mp = sf::Mouse::getPosition(window); !(mp.x < 0 || mp.x >= map_height * (Node::sizex + Node::spacing) || mp.y < 0 || mp.y >= map_width * (Node::sizey + Node::spacing)))
-			{
-				const int x = static_cast<int>(mp.x / (Node::sizex + Node::spacing));
-				const int y = static_cast<int>(mp.y / (Node::sizey + Node::spacing));
+			//for (auto& row : map)
+			//{
+			//	for (Node& node : row)
+			//	{
+			//		node.mouse_over(sf::Mouse::getPosition(window));
+			//	}
+			//}
 
-				if (sf::Keyboard::isKeyPressed(sf::Keyboard::LAlt))
+			if(sf::Vector2i mp = sf::Mouse::getPosition(window); !(mp.x < 0 || mp.x >= (Node::sizex + Node::spacing) * map_height || mp.y < 0 || mp.y >= (Node::sizey + Node::spacing) * map_width))
+			{
+				if(sf::Mouse::isButtonPressed(sf::Mouse::Left))
 				{
-					if (sf::Mouse::isButtonPressed(sf::Mouse::Left))
-					{
-						if (std::ranges::find(stops, &map[x][y]) == stops.end()) stops.push_back(&map[x][y]);
-					}
-					else if (sf::Mouse::isButtonPressed(sf::Mouse::Right))
-					{
-						std::erase_if(stops, [&](const Node* node) { return node == &map[x][y]; });
-					}
-				}
-				else if (sf::Keyboard::isKeyPressed(sf::Keyboard::LShift))
-				{
-					if (sf::Mouse::isButtonPressed(sf::Mouse::Left))
-					{
-						start = &map[x][y];
-					}
-					else if (sf::Mouse::isButtonPressed(sf::Mouse::Right))
+					const int x = std::floor(mp.x / (Node::sizex + Node::spacing));
+					const int y = std::floor(mp.y / (Node::sizey + Node::spacing));
+
+					if(sf::Keyboard::isKeyPressed(sf::Keyboard::LShift))
 					{
 						stop = &map[x][y];
 					}
-				}
-				else if (sf::Keyboard::isKeyPressed(sf::Keyboard::LControl))
-				{
-					if (sf::Mouse::isButtonPressed(sf::Mouse::Left))
+					else if(sf::Keyboard::isKeyPressed(sf::Keyboard::LControl))
 					{
 						p2 = sf::Vector2f{ -1,-1 };
 						p1 = sf::Vector2f(mp);
 						if (p2.x - p1.x != 0) m = (p2.y - p1.y) / (p2.x - p1.x);
 						b = -(m * p1.x - p1.y);
 					}
-					else if (sf::Mouse::isButtonPressed(sf::Mouse::Right))
+					else
+					{
+						map[x][y].blocking = false;
+					}
+				}
+				else if(sf::Mouse::isButtonPressed(sf::Mouse::Right))
+				{
+					const int x = std::floor(mp.x / (Node::sizex + Node::spacing));
+					const int y = std::floor(mp.y / (Node::sizey + Node::spacing));
+
+					if(sf::Keyboard::isKeyPressed(sf::Keyboard::LShift))
+					{
+						start = &map[x][y];
+					}
+					else if(sf::Keyboard::isKeyPressed(sf::Keyboard::LControl))
 					{
 						if (p1.x != -1 && p1.y != -1)
 						{
@@ -420,14 +463,10 @@ public:
 							b = -(m * p1.x - p1.y);
 						}
 					}
-				}
-				else if (sf::Mouse::isButtonPressed(sf::Mouse::Left))
-				{
-					map[x][y].blocking = true;
-				}
-				else if (sf::Mouse::isButtonPressed(sf::Mouse::Right))
-				{
-					map[x][y].blocking = false;
+					else
+					{
+						map[x][y].blocking = true;
+					}
 				}
 			}
 
@@ -459,7 +498,6 @@ public:
 			}
 			else if (sf::Keyboard::isKeyPressed(sf::Keyboard::R))
 			{
-				stops.clear();
 				visited_nodes = 0;
 				path_length = 0;
 				for (auto& row : map)
@@ -508,13 +546,6 @@ public:
 private:
 	void animate_a_star()
 	{
-		Node* start_cpy = start;
-		Node* stop_cpy = stop;
-		std::vector<Node*> stops_cpy = stops;
-		stops_cpy.insert(stops_cpy.begin(), stop);
-		std::ranges::sort(stops_cpy, [&](const Node* left, const Node* right) { return distance(*left, *start) > distance(*right, *start); });
-		stop = stops_cpy.back();
-		stops_cpy.pop_back();
 		visited_nodes = 0.f;
 		sf::Clock clk;
 		a_star();
@@ -552,40 +583,32 @@ private:
 
 			if (current == stop)
 			{
-				if (stops_cpy.empty())
+				path_length = 0;
+				while (current->parent != nullptr)
 				{
-					path_length = 0;
-					while (current->parent != nullptr)
-					{
-						path_length++;
-						current->isPath = true;
-						current = current->parent;
-					}
+					path_length++;
 					current->isPath = true;
+					current = current->parent;
+				}
+				current->isPath = true;
 
-					for (Node* node : open_set)
-					{
-						node->inOpenSet = true;
-					}
-					start = start_cpy;
-					stop = stop_cpy;
-					return;
+				for (Node* node : open_set)
+				{
+					node->inOpenSet = true;
 				}
 
-				start = stop;
-				std::ranges::sort(stops_cpy, [&](const Node* left, const Node* right) { return distance(*left, *start) > distance(*right, *start); });
-				stop = stops_cpy.back();
-				stops_cpy.pop_back();
-				open_set.clear();
-				open_set.push_back(start);
+				return;
 			}
-			ss << "Total time: " << total_time << "s\nReal time(no visualization): " << real_time << "s\nVisited nodes: " << static_cast<int>(visited_nodes) << '/' << map_width * map_height << " (" << visited_nodes / (map_width * map_height) * 100.f << "%)\nPath length: " << path_length;
+			ss << "Total time: " << total_time << "s\nReal time(no visualization): " << real_time << "s\nVisited nodes: " << static_cast<int>(visited_nodes) << '/' << static_cast<int>(map_width * map_height) << " (" << visited_nodes / (map_width * map_height) * 100.f << "%)\nPath length: " << path_length;
 			path_length = 0;
 			text.setString(ss.str());
 			ss.str("");
 			window.clear();
+			//rs.setFillColor(sf::Color::Green);
 			for (Node* node : open_set)
 			{
+				//rs.setPosition(node->x, node->y);
+				//window.draw(rs);
 				changed.push_back(node);
 				node->inOpenSet = true;
 			}
@@ -634,8 +657,6 @@ private:
 			std::ranges::sort(open_set, [&](const Node* left, const Node* right) { return left->fscore > right->fscore; });
 		}
 		path_length = 0;
-		start = start_cpy;
-		stop = stop_cpy;
 	}
 
 	void a_star()
@@ -698,43 +719,14 @@ private:
 
 		if (end.x != -1 && end.y != -1)
 		{
-			const float horizontal_distance = std::fabs(end.x - start.x);
-			const float vertical_distance = std::fabs(end.y - start.y);
-
-			if (horizontal_distance > vertical_distance)
+			while (std::fabs(start.x - end.x) > 0.01f)
 			{
-				const int end_x = static_cast<int>(end.x / (Node::sizex + Node::spacing));
-				int x = static_cast<int>(start.x / (Node::sizex + Node::spacing));
-				while (x != end_x + 1)
-				{
-					const int y = static_cast<int>(m * start.x + b) / static_cast<int>(Node::sizex + Node::spacing);
-
-					start.x += Node::sizex + Node::spacing;
-					if (x >= map_height || x < 0 || y >= map_width || y < 0) break;
-					map[x][y].blocking = true;
-					x++;
-				}
+				int y = m * start.x + b;
+				y /= Node::sizey + Node::spacing;
+				int x = start.x / (Node::sizex + Node::spacing);
+				map[x][y].blocking = true;
+				start.x += 0.002f;
 			}
-			else
-			{
-				if (start.y > end.y)
-				{
-					std::swap(start, end);
-				}
-
-				const int end_y = static_cast<int>(end.y / (Node::sizey + Node::spacing));
-				int y = static_cast<int>(start.y / (Node::sizey + Node::spacing));
-				while (y != end_y + 1)
-				{
-					int x = static_cast<int>((start.y - b) / m) / static_cast<int>(Node::sizey + Node::spacing);
-
-					start.y += Node::sizey + Node::spacing;
-					if (x >= map_height || x < 0 || y >= map_width || y < 0) break;
-					map[x][y].blocking = true;
-					y++;
-				}
-			}
-
 			p1 = p2;
 			p2 = sf::Vector2f(-1, -1);
 		}
@@ -747,63 +739,22 @@ private:
 				std::swap(start, end);
 			}
 
-			const float horizontal_distance = std::fabs(end.x - start.x);
-			const float vertical_distance = std::fabs(end.y - start.y);
-
 			if (end == start || p1.x == -1 && p1.y == -1) return;
 			m = (end.y - start.y) / (end.x - start.x);
 			b = -(m * start.x - start.y);
-
-			if (horizontal_distance > vertical_distance)
+			while (std::fabs(start.x - end.x) > 0.01f)
 			{
-				const int end_x = static_cast<int>(end.x / (Node::sizex + Node::spacing));
-				int x = static_cast<int>(start.x / (Node::sizex + Node::spacing));
-				while (x <= end_x)
-				{
-					const int y = (m * start.x + b) / (Node::sizex + Node::spacing);
+				//if (std::fabs(start.x - end.x) < 0.05f) return;
+				int y = m * start.x + b;
+				y /= Node::sizey + Node::spacing;
+				int x = start.x / (Node::sizex + Node::spacing);
+				//std::cout << std::format("m: {}, b: {}, x: {}, y: {}\n", m, b, x, y);
 
-					start.x += Node::sizex + Node::spacing;
-					if (x >= map_height || x < 0 || y >= map_width || y < 0) break;
-					map[x][y].isTempPath = true;
-					x++;
-				}
-			}
-			else
-			{
-				if(start.y > end.y)
-				{
-					std::swap(start, end);
-
-					m = (end.y - start.y) / (end.x - start.x);
-					b = -(m * start.x - start.y);
-				}
-
-				const int end_y = static_cast<int>(end.y / (Node::sizey + Node::spacing));
-				int y = static_cast<int>(start.y / (Node::sizey + Node::spacing));
-				while (y <= end_y)
-				{
-					int x = ((start.y - b) / m) / (Node::sizey + Node::spacing);
-
-					start.y += Node::sizey + Node::spacing;
-					if (x >= map_height || x < 0 || y >= map_width || y < 0) break;
-					map[x][y].isTempPath = true;
-					y++;
-				}
+				start.x += 0.003f;
+				if (x >= map_height || x < 0 || y >= map_width || y < 0) continue;
+				map[x][y].isTempPath = true;
 			}
 		}
-	}
-
-	bool push_if_valid(std::stack<Node*>& nodes, Node* const current, const int x, const int y)
-	{
-		if (!(x < 0 || x >= map_height || y < 0 || y >= map_width) && !map[x][y].visited)
-		{
-			map[x][y].neighbors.push_back(current);
-			current->neighbors.push_back(&map[x][y]);
-			visited_nodes++;
-			nodes.push(&map[x][y]);
-			return true;
-		}
-		return false;
 	}
 
 	void build_maze()
@@ -843,11 +794,28 @@ private:
 			Node* current = nodes.top();
 			current->visited = true;
 			board.update_maze_selected(current->gridx, current->gridy);
+			//std::cout << "update maze selected didn't crash\n";
+			bool should_back = true;
+			if (current->gridy - 1 >= 0 && !map[current->gridx][current->gridy - 1].visited)
+			{
+				should_back = false;
+			}
+			else if (current->gridy + 1 < map_width && !map[current->gridx][current->gridy + 1].visited)
+			{
+				should_back = false;
+			}
+			else if (current->gridx - 1 >= 0 && !map[current->gridx - 1][current->gridy].visited)
+			{
+				should_back = false;
+			}
+			else if (current->gridx + 1 < map_height && !map[current->gridx + 1][current->gridy].visited)
+			{
+				should_back = false;
+			}
+			//std::cout << "valid move check didn't crash\n";
 
-			if (!((current->gridy - 1 >= 0 && !map[current->gridx][current->gridy - 1].visited) ||
-				  (current->gridy + 1 < map_width && !map[current->gridx][current->gridy + 1].visited) ||
-				  (current->gridx - 1 >= 0 && !map[current->gridx - 1][current->gridy].visited) ||
-				  (current->gridx + 1 < map_height && !map[current->gridx + 1][current->gridy].visited)))
+
+			if (should_back)
 			{
 				nodes.pop();
 				continue;
@@ -857,20 +825,67 @@ private:
 
 			while (!passed)
 			{
+				//std::cout << "?\n";
 				passed = false;
 				const auto direction = static_cast<Direction>(distribution(twister));
 
-				if      (direction == Direction::North) passed = push_if_valid(nodes, current, current->gridx, current->gridy - 1);
-				else if (direction == Direction::South) passed = push_if_valid(nodes, current, current->gridx, current->gridy + 1);
-				else if (direction == Direction::West)  passed = push_if_valid(nodes, current, current->gridx - 1, current->gridy);
-				else if (direction == Direction::East)  passed = push_if_valid(nodes, current, current->gridx + 1, current->gridy);
+				if (direction == Direction::North)
+				{
+					if (current->gridy - 1 >= 0 && !map[current->gridx][current->gridy - 1].visited)
+					{
+						//std::cout << "\nnorth\n" << current->gridx << '/' << map.size() - 1 << ' ' << current->gridy - 1 << '/' << map[0].size() - 1;
+						map[current->gridx][current->gridy - 1].neighbors.push_back(current);
+						current->neighbors.push_back(&map[current->gridx][current->gridy - 1]);
+						visited_nodes++;
+						nodes.push(&map[current->gridx][current->gridy - 1]);
+						passed = true;
+					}
+				}
+				else if (direction == Direction::South)
+				{
+					if (current->gridy + 1 < map_width && !map[current->gridx][current->gridy + 1].visited)
+					{
+						//std::cout << "\nsouth\n" << current->gridx << '/' << map.size() - 1 << ' ' << current->gridy + 1 << '/' << map[0].size() - 1;
+						map[current->gridx][current->gridy + 1].neighbors.push_back(current);
+						current->neighbors.push_back(&map[current->gridx][current->gridy + 1]);
+						visited_nodes++;
+						nodes.push(&map[current->gridx][current->gridy + 1]);
+						passed = true;
+					}
+				}
+				else if (direction == Direction::West)
+				{
+					if (current->gridx - 1 >= 0 && !map[current->gridx - 1][current->gridy].visited)
+					{
+						//std::cout << "\nwest\n" << current->gridx - 1 << '/' << map.size() - 1 << ' ' << current->gridy << '/' << map[0].size() - 1;
+						map[current->gridx - 1][current->gridy].neighbors.push_back(current);
+						current->neighbors.push_back(&map[current->gridx - 1][current->gridy]);
+						visited_nodes++;
+						nodes.push(&map[current->gridx - 1][current->gridy]);
+						passed = true;
+					}
+				}
+				else if (direction == Direction::East)
+				{
+					if (current->gridx + 1 < map_height && !map[current->gridx + 1][current->gridy].visited)
+					{
+						//std::cout << "\neast\n" << current->gridx + 1 << '/' << map.size()-1 << ' ' << current->gridy << '/' << map[0].size()-1;
+						map[current->gridx + 1][current->gridy].neighbors.push_back(current);
+						current->neighbors.push_back(&map[current->gridx + 1][current->gridy]);
+						visited_nodes++;
+						nodes.push(&map[current->gridx + 1][current->gridy]);
+						passed = true;
+					}
+				}
 			}
 			board.append_wall(current, nodes.top());
+			//std::cout << "\nappend wall didnt crash\n";
 			ss.str("");
 			ss << "Generating maze: " << visited_nodes << '/' << map_width * map_height << " (" << visited_nodes / (map_width * map_height) * 100.f << "%)";
 			text.setString(ss.str());
 			window.clear();
 			window.draw(board);
+			//std::cout << "draw board didn't crash\n";
 			window.draw(text);
 			rs.setPosition(current->x, current->y);
 			window.draw(rs);
@@ -911,7 +926,8 @@ private:
 
 	static float distance(const Node& left, const Node& right)
 	{
-		return std::sqrtf(std::powf(left.x - right.x, 2) + std::powf(left.y - right.y, 2));
+		//return std::sqrtf(std::powf(left.gridx - right.gridx, 2) + std::powf(left.gridy - right.gridy, 2));
+		return std::fabs(right.y - left.y) + std::fabs(right.x - left.x);
 	}
 
 	float heuristic(const Node& node) const
@@ -942,6 +958,8 @@ private:
 				map[i][j].gridx = i;
 				map[i][j].gridy = j;
 				map[i][j].neighbors.clear();
+
+				//std::cout << std::format("gridx: {}, gridy: {}, map[gridx][gridy]: {}, {}\n", map[i][j].gridx, map[i][j].gridy, map[map[i][j].gridx][map[i][j].gridy].gridx, map[map[i][j].gridx][map[i][j].gridy].gridy);
 			}
 		}
 
@@ -953,6 +971,11 @@ private:
 				if (i < map_height - 1) map[i][j].neighbors.push_back(&map[i + 1][j]);
 				if (j > 0) map[i][j].neighbors.push_back(&map[i][j - 1]);
 				if (j < map_width - 1) map[i][j].neighbors.push_back(&map[i][j + 1]);
+
+				//if (i > 0 && j > 0) map[i][j].neighbors.push_back(&map[i - 1][j - 1]);
+				//if (i > 0 && j < map_width - 1) map[i][j].neighbors.push_back(&map[i - 1][j + 1]);
+				//if (i < map_height - 1 && j > 0) map[i][j].neighbors.push_back(&map[i + 1][j - 1]);
+				//if (i < map_height - 1 && j < map_width - 1) map[i][j].neighbors.push_back(&map[i + 1][j + 1]);
 			}
 		}
 
